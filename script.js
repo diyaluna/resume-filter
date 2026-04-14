@@ -19,8 +19,8 @@
   // State
   let selectedFiles = [];
   const extractedTexts = new Map();
+  let isAnalyzing = false; // prevent double clicks
 
-  // Common non‑skill words to filter out
   const commonNonSkills = new Set([
     'years','year','month','experience','work','project','team','company',
     'include','including','etc','eg','ie','ability','strong','knowledge',
@@ -71,7 +71,6 @@
     throw new Error('Unsupported file type');
   }
 
-  // Render file chips
   function renderFileList() {
     fileListDiv.innerHTML = '';
     if (selectedFiles.length === 0) {
@@ -84,18 +83,21 @@
       chip.innerHTML = `<i class="far fa-file"></i> ${file.name} <span style="cursor:pointer;margin-left:8px;" data-index="${index}">&times;</span>`;
       fileListDiv.appendChild(chip);
     });
-    // Remove file on cross click
-    fileListDiv.querySelectorAll('span[data-index]').forEach(span => {
-      span.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const idx = parseInt(e.target.dataset.index);
-        selectedFiles.splice(idx, 1);
-        renderFileList();
-      });
-    });
+    // Use event delegation instead of attaching multiple listeners
   }
 
-  // Reset everything
+  // Handle removal via event delegation on the fileListDiv
+  fileListDiv.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target.tagName === 'SPAN' && target.hasAttribute('data-index')) {
+      const idx = parseInt(target.getAttribute('data-index'));
+      if (!isNaN(idx) && idx >= 0 && idx < selectedFiles.length) {
+        selectedFiles.splice(idx, 1);
+        renderFileList();
+      }
+    }
+  });
+
   function resetAll() {
     jobInput.value = '';
     selectedFiles = [];
@@ -103,15 +105,15 @@
     renderFileList();
     resultsSection.style.display = 'none';
     statusMsg.textContent = '';
+    isAnalyzing = false;
   }
 
-  // Show modal with resume text
   function showModal(text) {
     modalText.textContent = text.slice(0, 5000) + (text.length > 5000 ? '\n\n... (truncated)' : '');
     modal.style.display = 'flex';
   }
 
-  // --- Event Listeners (attached once) ---
+  // --- Event Listeners (attached only once) ---
   uploadBtn.addEventListener('click', () => {
     fileInput.click();
   });
@@ -122,7 +124,7 @@
       selectedFiles = [...selectedFiles, ...newFiles];
       renderFileList();
     }
-    fileInput.value = ''; // Clear input so same file can be re‑selected if needed
+    fileInput.value = ''; // allow re-selecting same file
   });
 
   resetBtn.addEventListener('click', resetAll);
@@ -133,6 +135,12 @@
   });
 
   analyzeAllBtn.addEventListener('click', async () => {
+    // Prevent multiple simultaneous analyses
+    if (isAnalyzing) {
+      statusMsg.textContent = 'Analysis already in progress...';
+      return;
+    }
+
     const jobText = jobInput.value.trim();
     if (!jobText) {
       alert('Please enter a job description.');
@@ -149,6 +157,8 @@
       return;
     }
 
+    isAnalyzing = true;
+    analyzeAllBtn.disabled = true;
     statusMsg.textContent = `Processing ${selectedFiles.length} file(s)...`;
     resultsSection.style.display = 'none';
     extractedTexts.clear();
@@ -191,7 +201,7 @@
         <td>${res.filename} ${res.error ? '<span style="color:#dc2626;">(error)</span>' : ''}</td>
         <td><span class="score-badge">${res.score}%</span></td>
         <td>${res.matchedKeywords.join(', ') || '—'}</td>
-        <td><button class="view-btn" data-filename="${res.filename}"><i class="far fa-file-alt"></i> View</button></td>
+        <td><button class="view-btn" data-filename="${res.filename.replace(/'/g, "\\'")}"><i class="far fa-file-alt"></i> View</button></td>
       `;
       resultsBody.appendChild(row);
     });
@@ -208,6 +218,9 @@
     const successCount = results.filter(r => !r.error).length;
     statusMsg.textContent = `✅ Analysis complete. ${successCount} of ${selectedFiles.length} files processed successfully.`;
     resultsSection.style.display = 'block';
+    
+    isAnalyzing = false;
+    analyzeAllBtn.disabled = false;
   });
 
   // Initial render
